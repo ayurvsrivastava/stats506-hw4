@@ -1,0 +1,333 @@
+---
+title: "hw4"
+format:
+  html:
+    embed-resources: true
+---
+1. Tidyverse
+    ```{r, include=FALSE}
+    library(knitr)
+    library(dplyr)
+    library(tidyverse)
+    ```
+
+    a. Generate Tables
+        ```{r, include=FALSE}
+        library(nycflights13)
+        ```
+        i. Mean and median of departure delay per airport print airport name not code
+            ```{r}
+            print(
+                kable(
+                    flights %>%
+                        group_by(dest) %>%
+                            dplyr::filter(n() >= 10) %>%
+                        ungroup() %>%
+                        left_join(airports, by = c("dest" = "faa")) %>%
+                        group_by(name) %>%
+                            summarise(
+                                mean = mean(dep_delay, na.rm = TRUE), 
+                                median = median(dep_delay, na.rm = TRUE),
+                            ) %>%
+                            arrange(desc(mean)) %>%
+                        ungroup()
+                )
+            )
+            ```
+        i. Mean and median of arriver delay per airport
+            ```{r}
+            print(
+                kable(
+                    flights %>%
+                        group_by(dest) %>%
+                            dplyr::filter(n() >= 10) %>%
+                        ungroup() %>%
+                        left_join(airports, by = c("dest" = "faa")) %>%
+                        group_by(name) %>%
+                            summarise(
+                                mean = mean(arr_delay, na.rm = TRUE), 
+                                median = median(arr_delay, na.rm = TRUE),
+                            ) %>%
+                            arrange(desc(mean)) %>%
+                        ungroup()
+                )
+            )
+            ```
+    a. How many flights did the aircraft model with the fastest average speed take?
+        ```{r}
+        print(
+            kable(
+                flights %>%
+                    group_by(tailnum) %>%
+                        summarise(
+                            mean = mean(distance / air_time * 60, na.rm = TRUE),
+                            n = n()
+                        ) %>%
+                        arrange(desc(mean)) %>%
+                        head(1) %>%
+                    ungroup()
+            )
+        )
+        ```
+
+1. get_temp()
+    ```{r}
+    get_temp <- function(month, year, data, celsius = FALSE, average_fn = mean) {
+        #month santization
+        full_months = c(
+            "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"
+        )
+        small_months = c(
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+        )
+        if (!is.numeric(month)) {
+            if (nchar(month) == 3) {
+                month <- as.numeric(match(tolower(month), small_months))
+            }
+            else {
+                month <- as.numeric(match(tolower(month), full_months))
+            }
+            if (is.na(month)) {
+                return("Invalid month")
+            }
+        }
+        if (month < 1 || month > 12) {
+            return("Invalid month")
+        }
+
+        # year santization
+        if (!is.numeric(year)) {
+            return("Year must be numeric")
+        }
+
+        # data santization
+        if (!is.data.frame(data)) {
+            return("data must be a data frame")
+        }
+
+        # celsius santization
+        if (!is.logical(celsius)) {
+            return("celsius must be logical")
+        }
+
+        # average_fn santization
+        if (!is.function(average_fn)) {
+            return("average_fn must be a function")
+        }
+
+        if (nrow(data) == 0) {
+            return("No data for this month and year")
+        }
+        if (celsius) {
+            data <- data %>%
+                mutate(temp = (temp - 32) * 5 / 9)
+        }
+        data <- data[month(data$date) == month, ]
+        data <- data[year(data$date) == year, ]
+        if (nrow(data) == 0) {
+            return("No data for this month and year")
+        }
+        return(
+            c(
+                data %>%
+                    summarise(
+                        average = average_fn(temp)
+                    ) %>%
+                    pull(average)
+            )
+        )
+    }
+    ```
+    ```{r}
+    nnmaps <- read.csv("chicago-nmmaps.csv")
+    nnmaps$month_numeric <- as.numeric(nnmaps$month_numeric)
+    nnmaps$date <- as.Date(nnmaps$date)
+    print(get_temp("Apr", 1999, data = nnmaps))
+    get_temp("Apr", 1999, data = nnmaps, celsius = TRUE)
+    get_temp(10, 1998, data = nnmaps, average_fn = median)
+    get_temp(13, 1998, data = nnmaps)
+    get_temp(2, 2005, data = nnmaps)
+    print(
+        get_temp(
+            "November", 1999, data =nnmaps, celsius = TRUE,
+            average_fn = function(x) {
+                x %>% sort -> x
+                x[2:(length(x) - 1)] %>% mean %>% return
+            }
+        )
+    )
+    ```
+
+1. SAS
+    ```{sas, eval=FALSE}
+    proc import
+        datafile="~/sasuser.v94/data.csv"
+        out=work.recs;
+    ```
+
+    a. What state has the highest percentage of records? What percentage of all records correspond to Michigan?
+        ```{sas, eval=FALSE}
+        proc sql;
+            create table StatePercentRecords as
+            select 
+                state_name, 
+                (sum(nweight) / (select sum(nweight) from work.recs)) * 100 as record_percent
+            from work.recs
+            group by state_name;
+        quit;
+
+        proc sort data=StatePercentRecords;
+            by descending record_percent;
+        run;
+
+        proc print data=StatePercentRecords (obs=1);
+        run;
+
+        proc sql;
+            create table MichiganStatePercentRecords as
+            select * from StatePercentRecords
+            where state_name = 'Michigan';
+        quit;
+
+        proc print data=MichiganStatePercentRecords;
+        run;
+        ```
+        California at 10.67% and Michigan at 3.17%. See files: highest_state_record_percent.html and michigan_state_record_percent.html for tables.
+    a. Generate a histogram of the total electricity cost in dollars, amongst those with a strictly positive cost.
+        ```{sas, eval=FALSE}
+        proc sql;
+            create table ElectricityCost as
+            select DOLLAREL, log(DOLLAREL) as log_dollarel from work.recs
+            where DOLLAREL > 0;
+        quit;
+
+        proc sgplot data=ElectricityCost;
+            histogram DOLLAREL / binwidth=100;
+            xaxis grid;
+            yaxis grid;
+            xaxis label="Cost in Dollars for Electricity";
+            yaxis label="Frequency";
+        run;
+        ```
+        Histogram located in file: dollarel_histogram.html
+    a. Generate a histogram of the log of the total electricity cost.
+        ```{sas, eval=FALSE}
+        proc sql;
+            create table ElectricityCost as
+            select DOLLAREL, log(DOLLAREL) as log_dollarel from work.recs
+            where DOLLAREL > 0;
+        quit;
+
+        proc sgplot data=ElectricityCost;
+            histogram log_dollarel / binwidth=.1;
+            xaxis grid;
+            yaxis grid;
+            xaxis label="Log Cost in Dollars for Electricity";
+            yaxis label="Frequency";
+        run;
+        ```
+        Histogram located in file: log_dollarel_histogram.html
+    a. Fit a linear regression model predicting the log of the total electricity cost based upon the number of rooms in the house and whether or not the house has a garage.
+        ```{sas, eval=FALSE}
+        proc sql;
+            create table ModelData as
+            select (TOTROOMS + NCOMBATH + NHAFBATH) as tot_rooms,
+                PRKGPLC1,
+                NWEIGHT,
+                DOLLAREL as dollarel,
+                log(DOLLAREL) as log_dollarel
+            from work.recs
+            where PRKGPLC1 <> -2;
+        quit;
+
+        data ModelData;
+            set ModelData;
+            if not missing(tot_rooms) and not missing(PRKGPLC1);
+            if not missing(NWEIGHT) and not missing(dollarel);
+            if not missing(log_dollarel);
+        run;
+        proc reg data=ModelData;
+            model log_dollarel = tot_rooms PRKGPLC1;
+            output out=ModelData predicted=pred_log_dollarel;
+            weight NWEIGHT;
+        run;
+        ```
+        See file: lin_model.html for table.
+    a. Use that model to generate predicted values and create a scatterplot of predicted total electricity cost vs actual total electricity cost (not on the log scale).
+        ```{sas, eval=FALSE}
+        data ModelData;
+            set ModelData;
+            pred_dollarel = exp(pred_log_dollarel);
+        run;
+
+        proc sgplot data=ModelData;
+            scatter x=dollarel y=pred_dollarel;
+            xaxis label="Actual Cost in Dollars for Electricity";
+            yaxis label="Predicted Cost in Dollars for Electricity";
+        run;
+        ```
+        See file: pred_vs_actual.html for table.
+1. Multiple tools
+    a. Import the data into SAS
+        ```{sas, eval=FALSE}
+        proc import
+        datafile="~/sasuser.v94/public2022.csv"
+        out=data;
+
+        proc sql;
+            create table SubsetData as
+            select
+                B3 as better_same_worse,
+                ND2 as natural_disaster,
+                B7_b as economic_today,
+                GH1 as home_owner_status,
+                ppeducat as education,
+                race_5cat as race
+            from data;
+        quit;
+
+        proc export data=SubsetData
+            outfile="~/sasuser.v94/public2022.dta"
+            dbms=STATA replace;
+        run;
+        ```
+    a. Demonstrate that you’ve successfully extracted the appropriate data by showing the number of observations and variables.
+        ```{stata, eval=FALSE}
+        use "\\tsclient\Remote Desktop Virtual Drive\Uploads\public2022.dta"
+        describe
+        ```
+        Observations:        11,667                  
+        Variables:             8                  
+        CaseID          double  %12.0g
+        better_worse    double  %12.0g
+        nat_dis         double  %12.0g
+        econ_tdy        double  %12.0g
+        home            double  %12.0g
+        education       double  %12.0g
+        race            double  %12.0g
+        weight          double  %12.0g
+
+        There were 11,667 observations in the dataset which means we have successfully extracted the data.
+    a. Carry out a logisitic regression model accounting for the complex survey design.
+        ```{stata, eval=FALSE}
+        svyset CaseID [pw=weight]
+        svy: logistic better_worse nat_dis econ_tdy i.education i.home i.race
+        ```
+        Sampling weights: weight\
+        VCE: linearized\
+        Single unit: missing\
+        Strata 1: <one>\
+        Sampling unit 1: CaseID\
+        FPC 1: <zero>\
+        ![](logistic_reg.png)
+        Given that the odds ratio for nat_dis is 1.033 controlling for all other variables, that means that if someone thinks that the chance of a natural disaster is low, then they are 1.033 times more likely to think that the economy will be better. However, there is a p value of .276 which means that the variable itself is not statistically significant and consequently would not be a good predictor. 
+    
+    a. Use the survey package to obtain the pseudo-R^2 value
+        ```{r}
+        library(survey)
+        library(haven)
+        dat <- read_dta("public2022.dta")
+        des <- svydesign(id = ~ CaseID, weight = ~ weight, data = dat)
+        model <- svyglm(better_worse ~ nat_dis + econ_tdy + education + as.factor(home) + as.factor(race), design = des, family = quasibinomial)
+        print(psrsq(model))
+        ```
